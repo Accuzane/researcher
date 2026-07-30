@@ -84,6 +84,7 @@ def supervisor_node(state: AgentState) -> dict:
         HumanMessage(content=state["query"])
     ]
     response = llm.invoke(messages)
+    print(f"[SUPERVISOR] routed to: {response.content.strip().lower()}") 
     return {"next_agent": response.content.strip().lower()}
 
 # routing function used by the conditional edge below

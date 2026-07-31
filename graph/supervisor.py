@@ -1,4 +1,3 @@
-# --- imports ---
 from typing import TypedDict
 
 from dotenv import load_dotenv
@@ -18,7 +17,7 @@ from tools.file_tools import save_note, load_note, list_notes
 load_dotenv()
 
 
-# --- llm + tools setup ---
+# llm + tools setup
 llm = ChatOllama(model="qwen3:8b")
 
 research_tools = [TavilySearch(max_results=3)]
@@ -31,7 +30,7 @@ qa_tools = [load_note, list_notes]
 qa_llm = llm.bind_tools(qa_tools)
 
 
-# --- shared state ---
+# shared state
 class AgentState(TypedDict):
     query: str
     topic: str
@@ -42,7 +41,7 @@ class AgentState(TypedDict):
     needs_research: bool
     retry_count: int
 
-# --- node functions ---
+# node functions
 def researcher_node(state: AgentState) -> dict:
     result = researcher(state["query"], research_llm, research_tools)
     return {"research": result}
@@ -93,7 +92,7 @@ def route_after_critic(state: AgentState) -> str:
     if state.get("needs_research") and state.get("retry_count", 0) < 2:
         return "researcher"
     return "note_writer"
-# --- graph wiring ---
+# graph wiring
 graph = StateGraph(AgentState)
 
 graph.add_node("supervisor", supervisor_node)
@@ -127,6 +126,6 @@ graph.add_edge("note_writer", "qa")
 graph.add_edge("qa", END)
 
 
-# --- compile with checkpointing + human-in-the-loop pause ---
+# compile with checkpointing + human-in-the-loop pause
 checkpointer = MemorySaver()
 app = graph.compile(checkpointer=checkpointer, interrupt_before=["note_writer"])

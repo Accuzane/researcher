@@ -1,7 +1,7 @@
 from graph.supervisor import app
 def save_note(config):
     state = app.get_state(config)
-    if state.next == "note_writer":
+    if state.next == ("note_writer",):
         choice = input("Do you want to save this note? (y/n): ")
         result = app.invoke(None, config=config) if choice.lower() == "y" else "Note discarded."
         return result

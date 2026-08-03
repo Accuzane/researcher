@@ -4,6 +4,7 @@ import os
 NOTES_DIR = "notes"
 os.makedirs(NOTES_DIR, exist_ok=True)
 
+
 @tool
 def save_note(topic: str, content: str) -> str:
     """Save a note with the given content to a file."""
@@ -13,6 +14,7 @@ def save_note(topic: str, content: str) -> str:
         f.write(content)
     return filepath
 
+
 @tool
 def load_note(topic: str) -> str:
     """Load the content of a note from a file."""
@@ -21,8 +23,8 @@ def load_note(topic: str) -> str:
     if not os.path.exists(filepath):
         return f"Note '{topic}' does not exist."
     with open(filepath, "r", encoding="utf-8") as f:
-        content = f.read()
-    return content
+        return f.read()
+
 
 @tool
 def list_notes() -> str:
@@ -31,4 +33,3 @@ def list_notes() -> str:
     if not files:
         return "No notes saved yet."
     return "\n".join(f.replace("_", " ").replace(".txt", "") for f in files)
-

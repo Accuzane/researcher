@@ -1,32 +1,46 @@
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
+
 from graph.supervisor import app
-def save_note(config):
+
+
+def maybe_save_note(config):
     state = app.get_state(config)
     if state.next == ("note_writer",):
-        choice = input("Do you want to save this note? (y/n): ")
-        result = app.invoke(None, config=config) if choice.lower() == "y" else "Note discarded."
-        return result
+        choice = input("Save this note? (y/n): ").strip().lower()
+        if choice == "y":
+            return app.invoke(None, config=config)
+        return None
     return None
-while True:
-    query = input("Ask me anything (or type 'exit' to quit): ")
-    if query.lower() == "exit":
-        break
-    config = {
-        "configurable": {
-            "thread_id": 1,
+
+
+def main():
+    thread_id = 1
+    while True:
+        query = input("\nAsk me anything (or 'exit'): ").strip()
+        if query.lower() == "exit":
+            break
+
+        config = {"configurable": {"thread_id": thread_id}}
+        state = {
+            "query": query,
+            "topic": "",
+            "research": "",
+            "answer": "",
+            "saved_path": "",
+            "next_agent": "",
+            "needs_research": False,
+            "retry_count": 0,
         }
-    }
 
-    state = {
-        "query": query,
-        "topic": "",
-        "research": "",
-        "answer": "",
-        "saved_path": "",
-        "next_agent": "",
-        "needs_research": False,
-        "retry_count": 0,
-    }
-    result = app.invoke(state, config=config)
-    save_note(config)
+        result = app.invoke(state, config=config)
+        resumed = maybe_save_note(config)
+        final = resumed if resumed else result
 
-    print(result.get("answer", result))
+        print(f"\n{'-'*40}")
+        print(final.get("answer", "(no answer)"))
+        print("-" * 40)
+
+
+if __name__ == "__main__":
+    main()

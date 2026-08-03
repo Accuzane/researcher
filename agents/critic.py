@@ -3,6 +3,8 @@ import json
 import logging
 import re
 
+logger = logging.getLogger("critic")
+
 CRITIC_PROMPT = """
 You are a quality reviewer for research summaries. Evaluate the summary on:
 1. Does it contain at least 3 specific facts?
@@ -39,8 +41,9 @@ def critic(research_summary: str, llm: any) -> dict:
     try:
         verdict = _extract_json(response.content)
     except (ValueError, json.JSONDecodeError):
-        logging.error(f"Critic returned unparseable response: {response.content}")
+        logger.error(f"unparseable response, defaulting to pass: {response.content}")
         # fail-open: don't block the pipeline if the critic itself misbehaves
         verdict = {"pass": True, "reason": "Could not parse critic response; defaulting to pass."}
 
+    logger.info(f"verdict: pass={verdict.get('pass')} reason={verdict.get('reason')}")
     return verdict

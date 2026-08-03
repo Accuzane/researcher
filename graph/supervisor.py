@@ -1,3 +1,4 @@
+import logging
 from typing import TypedDict
 
 from dotenv import load_dotenv
@@ -13,11 +14,12 @@ from agents.qa_agent import qa_agent
 from agents.critic import critic
 from tools.file_tools import save_note, load_note, list_notes
 
-
 load_dotenv()
 
+logger = logging.getLogger("supervisor")
 
-# llm + tools setup
+
+# --- llm + tools setup ---
 llm = ChatOllama(model="qwen3:8b")
 
 research_tools = [TavilySearch(max_results=3)]
@@ -30,7 +32,7 @@ qa_tools = [load_note, list_notes]
 qa_llm = llm.bind_tools(qa_tools)
 
 
-# shared state
+# --- shared state ---
 class AgentState(TypedDict):
     query: str
     topic: str
@@ -41,7 +43,8 @@ class AgentState(TypedDict):
     needs_research: bool
     retry_count: int
 
-# node functions
+
+# --- node functions ---
 def researcher_node(state: AgentState) -> dict:
     result = researcher(state["query"], research_llm, research_tools)
     return {"research": result}
@@ -56,12 +59,12 @@ def qa_node(state: AgentState) -> dict:
     result = qa_agent(state["query"], qa_llm, qa_tools)
     return {"answer": result}
 
+
 def critic_node(state: AgentState) -> dict:
     verdict = critic(state["research"], llm)
     if verdict.get("pass"):
         return {"needs_research": False}
     return {"needs_research": True, "retry_count": state.get("retry_count", 0) + 1}
-
 
 
 SUPERVISOR_PROMPT = """
@@ -78,21 +81,26 @@ Respond with ONLY one word: researcher, note_writer, or qa.
 
 
 def supervisor_node(state: AgentState) -> dict:
+    saved_topics = list_notes.invoke({})
+
     messages = [
         SystemMessage(content=SUPERVISOR_PROMPT),
-        HumanMessage(content=state["query"])
+        HumanMessage(content=f"Already saved notes on: {saved_topics}\n\nUser query: {state['query']}")
     ]
     response = llm.invoke(messages)
-    print(f"[SUPERVISOR] routed to: {response.content.strip().lower()}") 
-    return {"next_agent": response.content.strip().lower()}
+    decision = response.content.strip().lower()
+    logger.info(f"routed to: {decision}")
+    return {"next_agent": decision}
 
-# routing function used by the conditional edge below
+
 def route_after_critic(state: AgentState) -> str:
     # cap retries so a stubborn critic can't loop forever
     if state.get("needs_research") and state.get("retry_count", 0) < 2:
         return "researcher"
     return "note_writer"
-# graph wiring
+
+
+# --- graph wiring ---
 graph = StateGraph(AgentState)
 
 graph.add_node("supervisor", supervisor_node)
@@ -103,29 +111,24 @@ graph.add_node("critic", critic_node)
 
 graph.set_entry_point("supervisor")
 
-# Supervisor routes to one of the three agents
 graph.add_conditional_edges(
     "supervisor",
     lambda s: s["next_agent"],
     {"researcher": "researcher", "note_writer": "note_writer", "qa": "qa"}
 )
 
-# After research, the critic reviews it
 graph.add_edge("researcher", "critic")
 
-# Critic either sends it back for another search, or forward to save
 graph.add_conditional_edges(
     "critic",
     route_after_critic,
     {"researcher": "researcher", "note_writer": "note_writer"}
 )
 
-# After saving, answer the original query
 graph.add_edge("note_writer", "qa")
-# After Q&A, done
 graph.add_edge("qa", END)
 
 
-# compile with checkpointing + human-in-the-loop pause
+# --- compile with checkpointing + human-in-the-loop pause ---
 checkpointer = MemorySaver()
 app = graph.compile(checkpointer=checkpointer, interrupt_before=["note_writer"])

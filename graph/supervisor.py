@@ -75,6 +75,7 @@ Rules:
 - If the query asks a question about something already researched -> "qa"
 - If the query asks what topics have been saved -> "qa"
 - If research was just completed and needs saving -> "note_writer"
+- if the query is something the llm can answer without research -> "qa"
 
 Respond with ONLY one word: researcher, note_writer, or qa.
 """

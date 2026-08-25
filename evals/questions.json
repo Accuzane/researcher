@@ -1,0 +1,42 @@
+[
+  {
+    "question": "What is the current state of solid-state battery commercialisation for electric vehicles?",
+    "expect_keywords": ["solid-state", "electrolyte", "energy density"],
+    "note": "multi-faceted; should decompose into technology, manufacturing, and timeline"
+  },
+  {
+    "question": "How does Rust's borrow checker handle self-referential structs?",
+    "expect_keywords": ["borrow", "lifetime", "Pin"],
+    "note": "technical and specific; a good answer is narrow, not broad"
+  },
+  {
+    "question": "Compare Postgres and SQLite for a single-node application with heavy read traffic.",
+    "expect_keywords": ["concurrency", "write", "read"],
+    "note": "comparison; each system should get its own sub-question"
+  },
+  {
+    "question": "What were the main findings of the most recent IPCC synthesis report?",
+    "expect_keywords": ["IPCC", "emissions", "warming"],
+    "note": "recency-sensitive; sub-questions should say so explicitly"
+  },
+  {
+    "question": "Why did the Voyager 1 spacecraft start transmitting garbled telemetry, and how was it fixed?",
+    "expect_keywords": ["Voyager", "memory", "NASA"],
+    "note": "narrow factual; should not over-decompose"
+  },
+  {
+    "question": "What is retrieval-augmented generation and what are its main failure modes?",
+    "expect_keywords": ["retrieval", "chunk", "context"],
+    "note": "definitional plus analytical"
+  },
+  {
+    "question": "How do European and US regulations differ on AI model transparency requirements?",
+    "expect_keywords": ["EU", "transparency", "regulation"],
+    "note": "jurisdictional comparison; two clear branches"
+  },
+  {
+    "question": "What causes coffee ring stains and how can they be prevented?",
+    "expect_keywords": ["evaporation", "particle", "surfactant"],
+    "note": "physical mechanism; checks whether it finds primary literature"
+  }
+]

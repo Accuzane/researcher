@@ -1,43 +1,111 @@
+"""The shared tool-calling loop.
+
+Same shape as a textbook ReAct loop, with the two things a textbook version
+leaves out and production reliably punishes you for:
+
+* a hard iteration cap, so a model that keeps calling the same tool ends the
+  turn instead of the process;
+* per-tool error containment, so one search timeout costs you a tool result
+  rather than the entire graph run.
+"""
+
+from __future__ import annotations
+
 import logging
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from typing import Any, Sequence
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import (
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langchain_core.tools import BaseTool
+
+from config import settings
+from llm import strip_reasoning, _content_to_text
 
 
-def run_agent_loop(system_prompt: str, user_input: str, llm_with_tools: any, tools: list, agent_name: str = "agent") -> str:
-    """
-    Shared ReAct loop used by every tool-calling agent.
-    Sends messages to the model, runs any requested tools, and repeats
-    until the model returns a final answer instead of a tool request.
+def run_agent_loop(
+    system_prompt: str,
+    user_input: str,
+    llm_with_tools: BaseChatModel,
+    tools: Sequence[BaseTool],
+    agent_name: str = "agent",
+    max_iters: int | None = None,
+) -> str:
+    """Run the model until it answers, it stops calling tools, or we cut it off.
+
+    Always returns a string. Exhausting the iteration budget yields the best
+    text produced so far rather than raising, because a partial answer is more
+    useful to the caller than a stack trace.
     """
     logger = logging.getLogger(agent_name)
+    limit = max_iters or settings.react_max_iters
+    by_name = {tool.name: tool for tool in tools}
 
-    messages = [
+    messages: list[BaseMessage] = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=user_input)
+        HumanMessage(content=user_input),
     ]
+    last_text = ""
 
-    while True:
-        response = llm_with_tools.invoke(messages)
+    for iteration in range(limit):
+        try:
+            response = llm_with_tools.invoke(messages)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("model call failed: %s", exc)
+            return last_text or f"The model call failed: {exc}"
+
         messages.append(response)
+        text = strip_reasoning(_content_to_text(response.content))
+        if text:
+            last_text = text
 
-        if not response.tool_calls:
-            return response.content
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            return last_text
 
-        for tool_call in response.tool_calls:
-            logger.info(f"calling {tool_call['name']}({tool_call['args']})")
+        for call in tool_calls:
+            name = call.get("name", "")
+            args = call.get("args", {}) or {}
+            call_id = call.get("id") or name
+            logger.info("iter %d: %s(%s)", iteration + 1, name, args)
 
-            tool = next((t for t in tools if t.name == tool_call["name"]), None)
+            tool = by_name.get(name)
             if tool is None:
-                logger.error(f"tool '{tool_call['name']}' not found")
-                messages.append(ToolMessage(
-                    content=f"Error: tool '{tool_call['name']}' does not exist.",
-                    tool_call_id=tool_call["id"]
-                ))
+                messages.append(
+                    ToolMessage(
+                        content=(
+                            f"Error: tool '{name}' does not exist. "
+                            f"Available tools: {', '.join(by_name) or 'none'}."
+                        ),
+                        tool_call_id=call_id,
+                    )
+                )
                 continue
 
-            tool_result = tool.invoke(tool_call["args"])
-            logger.info(f"{tool_call['name']} returned: {str(tool_result)[:80]}")
+            messages.append(
+                ToolMessage(content=_invoke_tool(tool, args, logger), tool_call_id=call_id)
+            )
 
-            messages.append(ToolMessage(
-                content=str(tool_result),
-                tool_call_id=tool_call["id"]
-            ))
+    logger.warning("hit the %d-iteration cap; returning best effort", limit)
+    return last_text or (
+        "I wasn't able to finish this within the tool-call budget."
+    )
+
+
+def _invoke_tool(tool: BaseTool, args: dict[str, Any], logger: logging.Logger) -> str:
+    """Run one tool. A failure becomes a message the model can react to."""
+    try:
+        result = tool.invoke(args)
+    except Exception as exc:  # noqa: BLE001 - failures are fed back, not raised
+        logger.warning("%s failed: %s", tool.name, exc)
+        return (
+            f"Error: '{tool.name}' failed with {type(exc).__name__}: {exc}. "
+            f"Try different arguments, a different tool, or answer without it."
+        )
+    text = str(result)
+    logger.info("%s -> %s", tool.name, text[:120].replace("\n", " "))
+    return text

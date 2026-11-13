@@ -25,6 +25,10 @@ from tools.search import search_many
 
 logger = logging.getLogger("sub_researcher")
 
+# Written when a round retrieves nothing. Named so later rounds can recognise
+# it as a placeholder rather than treating it as evidence worth keeping.
+NO_SOURCES = "No sources could be retrieved for this question."
+
 QUERY_SYSTEM = """You write web search queries.
 
 Given a research question, produce {n} distinct search queries that would
@@ -101,11 +105,26 @@ def research_sub_question(
 
     sources = search_many(queries)
     if not sources:
+        # A follow-up that retrieves nothing must leave the earlier round's
+        # work alone. `merge_sub_questions` takes the later non-empty value
+        # field by field, so writing the placeholder here would overwrite cited
+        # findings and flip `answered` back to `unanswered` -- losing evidence
+        # that is still sitting in the source registry. An empty search is also
+        # what a backend timeout looks like, since `search()` swallows failures.
+        previous = (sub_question.get("findings") or "").strip()
+        if previous and previous != NO_SOURCES:
+            logger.info(
+                "%s: follow-up found nothing; keeping round-%s findings",
+                sub_question["id"],
+                sub_question.get("round"),
+            )
+            return ({**sub_question, "round": round_index}, [], len(queries))
+
         return (
             {
                 **sub_question,
                 "status": "unanswered",
-                "findings": "No sources could be retrieved for this question.",
+                "findings": NO_SOURCES,
                 "round": round_index,
             },
             [],
@@ -129,7 +148,7 @@ def research_sub_question(
     # Overwriting would mean a narrower second search could *lose* a good
     # first-round answer -- the loop is supposed to accumulate evidence.
     previous = (sub_question.get("findings") or "").strip()
-    if follow_up_query and previous:
+    if follow_up_query and previous and previous != NO_SOURCES:
         findings = f"{previous}\n\nAdditional findings:\n{findings.strip()}"
 
     cited = citations.find_citations(findings)

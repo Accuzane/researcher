@@ -186,12 +186,26 @@ def compile_graph(checkpointer=None):
     SqliteSaver rather than MemorySaver: once a run takes minutes rather than
     seconds, losing every checkpoint when the process exits stops being an
     acceptable trade.
+
+    The connection is opened directly rather than through
+    `SqliteSaver.from_conn_string`. That helper is a context manager: entering
+    it and keeping only the saver leaves nothing referencing the manager, so it
+    is finalised immediately and closes the connection out from under the saver
+    it just returned. The next checkpoint write then raises "Cannot operate on
+    a closed database".
     """
     if checkpointer is None:
+        import sqlite3
+
         from langgraph.checkpoint.sqlite import SqliteSaver
 
         settings.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        checkpointer = SqliteSaver.from_conn_string(str(settings.checkpoint_path))
-        checkpointer = checkpointer.__enter__()
+        conn = sqlite3.connect(
+            str(settings.checkpoint_path),
+            # Fanned-out branches run on a thread pool; the saver serialises
+            # access with its own lock.
+            check_same_thread=False,
+        )
+        checkpointer = SqliteSaver(conn)
 
     return build_graph().compile(checkpointer=checkpointer)

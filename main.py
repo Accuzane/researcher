@@ -58,18 +58,24 @@ def run_research(app, query: str) -> dict:
     return final
 
 
-def maybe_save(state: dict) -> None:
-    """Offer to save. Declining costs nothing -- the report is already printed."""
+def maybe_save(state: dict, assume_yes: bool = False) -> None:
+    """Offer to save. Declining costs nothing -- the report is already printed.
+
+    `assume_yes` backs `--save`. It skips the prompt but deliberately not the
+    empty-report guard: a question answered from saved notes produces no report,
+    and writing that would truncate the very note it was answered from.
+    """
     report = state.get("report", "")
     if not report.strip():
         return
-    try:
-        choice = input("\nSave this as a note? [y/N] ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return
-    if choice not in {"y", "yes"}:
-        return
+    if not assume_yes:
+        try:
+            choice = input("\nSave this as a note? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if choice not in {"y", "yes"}:
+            return
 
     sub_questions = state.get("sub_questions", [])
     unresolved = [sq["id"] for sq in sub_questions if sq.get("status") != "answered"]
@@ -127,10 +133,7 @@ def main() -> int:
     if args.query:
         state = answer_once(app, " ".join(args.query))
         show(state)
-        if args.save:
-            write_note(state.get("topic") or state["query"], state.get("report", ""))
-        else:
-            maybe_save(state)
+        maybe_save(state, assume_yes=args.save)
         return 0
 
     print(f"Research agent  ·  {settings.smart_model}  ·  Ctrl-D to exit")
